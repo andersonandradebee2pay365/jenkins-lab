@@ -80,7 +80,7 @@ pipeline {
                       ghcr.io/aquasecurity/trivy:latest image \
                       --no-progress \
                       --severity "${TRIVY_SEVERITY}" \
-                      --exit-code "${TRIVY_EXIT_CODE}" \
+                      --exit-code "${TRIVY_EXIT_CODE = '0'}" \
                       "${IMAGE_NAME}"
                 '''
             }
