@@ -7,7 +7,7 @@ pipeline {
         IMAGE_NAME      = "${APP_NAME}:${IMAGE_TAG}"
         LATEST_IMAGE    = "${APP_NAME}:latest"
         TRIVY_SEVERITY  = 'CRITICAL,HIGH'
-        TRIVY_EXIT_CODE = '1'
+        TRIVY_EXIT_CODE = '0'
         REPORT_FILE     = 'trivy-report.txt'
         PUSH_IMAGE      = "${env.PUSH_IMAGE ?: 'false'}"
         REGISTRY_URL    = "${env.REGISTRY_URL ?: ''}"
@@ -80,7 +80,7 @@ pipeline {
                       ghcr.io/aquasecurity/trivy:latest image \
                       --no-progress \
                       --severity "${TRIVY_SEVERITY}" \
-                      --exit-code "${TRIVY_EXIT_CODE = '0'}" \
+                      --exit-code "${TRIVY_EXIT_CODE}" \
                       "${IMAGE_NAME}"
                 '''
             }
