@@ -2,21 +2,9 @@ pipeline {
     agent any
 
     stages {
-        stage('Checkout') {
+        stage('Teste') {
             steps {
-                echo 'Clonando repositório...'
-            }
-        }
-
-        stage('Build') {
-            steps {
-                echo 'Executando build...'
-            }
-        }
-
-        stage('Test') {
-            steps {
-                echo 'Executando testes...'
+                echo 'Pipeline funcionando!'
             }
         }
     }
