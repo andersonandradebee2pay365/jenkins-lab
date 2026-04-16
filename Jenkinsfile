@@ -1,32 +1,122 @@
 pipeline {
     agent any
 
+    environment {
+        APP_NAME         = 'jenkins-lab-app'
+        IMAGE_TAG        = "${env.BUILD_NUMBER}"
+        IMAGE_NAME       = "${APP_NAME}:${IMAGE_TAG}"
+        LATEST_IMAGE     = "${APP_NAME}:latest"
+        TRIVY_SEVERITY   = 'CRITICAL,HIGH'
+        TRIVY_EXIT_CODE  = '1'
+        REPORT_FILE      = 'trivy-report.txt'
+    }
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+
     stages {
+
         stage('Checkout') {
             steps {
-                echo 'Clonando repositório...'
+                echo 'Baixando código do repositório...'
+                checkout scm
             }
         }
 
-        stage('Build') {
+        stage('Sanity Check') {
             steps {
-                echo 'Instalando dependências...'
-                bat 'pip install -r requirements.txt'
+                echo 'Validando arquivos obrigatórios...'
+                sh '''
+                    set -e
+                    test -f Dockerfile
+                    test -f Jenkinsfile
+                    ls -lah
+                '''
             }
         }
 
-        stage('Test') {
+        stage('Build Docker Image') {
             steps {
-                echo 'Executando testes...'
-                bat 'pytest'
+                echo 'Construindo imagem Docker da aplicação...'
+                sh '''
+                    set -e
+                    docker build -t ${IMAGE_NAME} -t ${LATEST_IMAGE} .
+                    docker images | grep ${APP_NAME} || true
+                '''
             }
         }
 
-        stage('Docker Build') {
+        stage('Trivy Scan - Report') {
             steps {
-                echo 'Build da imagem Docker...'
-                bat 'docker build -t jenkins-lab-app .'
+                echo 'Executando varredura Trivy e gerando relatório...'
+                sh '''
+                    set -e
+                    docker run --rm \
+                      -v /var/run/docker.sock:/var/run/docker.sock \
+                      -v $PWD:/workspace \
+                      ghcr.io/aquasecurity/trivy:latest image \
+                      --no-progress \
+                      --severity ${TRIVY_SEVERITY} \
+                      --format table \
+                      -o /workspace/${REPORT_FILE} \
+                      ${IMAGE_NAME}
+                '''
             }
+        }
+
+        stage('Security Gate') {
+            steps {
+                echo 'Aplicando gate de segurança com Trivy...'
+                sh '''
+                    set -e
+                    docker run --rm \
+                      -v /var/run/docker.sock:/var/run/docker.sock \
+                      ghcr.io/aquasecurity/trivy:latest image \
+                      --no-progress \
+                      --severity ${TRIVY_SEVERITY} \
+                      --exit-code ${TRIVY_EXIT_CODE} \
+                      ${IMAGE_NAME}
+                '''
+            }
+        }
+
+        stage('Push Image') {
+            when {
+                expression { return env.PUSH_IMAGE == 'true' }
+            }
+            steps {
+                echo 'Enviando imagem para registry...'
+                sh '''
+                    set -e
+                    docker tag ${IMAGE_NAME} ${REGISTRY_URL}/${APP_NAME}:${IMAGE_TAG}
+                    docker tag ${IMAGE_NAME} ${REGISTRY_URL}/${APP_NAME}:latest
+                    docker push ${REGISTRY_URL}/${APP_NAME}:${IMAGE_TAG}
+                    docker push ${REGISTRY_URL}/${APP_NAME}:latest
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Arquivando relatório do Trivy...'
+            archiveArtifacts artifacts: "${REPORT_FILE}", fingerprint: true, onlyIfSuccessful: false
+
+            echo 'Limpando imagens locais do build...'
+            sh '''
+                docker rmi ${IMAGE_NAME} ${LATEST_IMAGE} || true
+            '''
+        }
+
+        success {
+            echo 'Pipeline concluído com sucesso e security gate aprovado.'
+        }
+
+        failure {
+            echo 'Pipeline falhou. Verifique o Console Output e o relatório do Trivy.'
         }
     }
 }
